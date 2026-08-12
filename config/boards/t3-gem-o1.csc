@@ -37,7 +37,7 @@ TI_PACKAGES+=(
 # verified commit. Runs after the family config so it wins over k3.conf.
 function post_family_config__t3_gem_o1_uboot() {
 	declare -g BOOTSOURCE="https://github.com/t3gemstone/u-boot"
-	declare -g BOOTBRANCH="commit:8b5ae72c281207430fcc58031fe36f40900f7a2d"
+	declare -g BOOTBRANCH="commit:b8410d78120ed91156f3ec7ede81bed004f8b46e"
 	declare -g BOOTPATCHDIR="u-boot-t3-gem-o1"
 	display_alert "T3 Gemstone O1: using vendor U-Boot fork" "${BOOTBRANCH}" "info"
 }
