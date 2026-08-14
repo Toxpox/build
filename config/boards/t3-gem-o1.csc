@@ -14,9 +14,9 @@ BOOT_FDT_FILE="ti/k3-am67a-t3-gem-o1.dtb"
 DEFAULT_CONSOLE="serial"
 SERIALCON="ttyS2"
 PACKAGE_LIST_BOARD="bluez"
-# Mainline edge is left out on purpose: the board DTS is carried only by the
-# K3 6.18 patch set. Keep vendor-edge, which follows TI's 6.18.y branch.
-KERNEL_TARGET="vendor,vendor-rt,vendor-edge"
+# The board patch set backports a TPS65219 fix that vendor-edge already carries,
+# so advertising vendor-edge here would fail with an already-applied patch.
+KERNEL_TARGET="vendor,vendor-rt"
 KERNEL_TEST_TARGET="vendor"
 ATF_PLAT="k3"
 ATF_BOARD="lite"
