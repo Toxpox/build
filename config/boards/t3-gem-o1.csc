@@ -13,16 +13,17 @@ BOOTFS_TYPE="fat"
 BOOT_FDT_FILE="ti/k3-am67a-t3-gem-o1.dtb"
 DEFAULT_CONSOLE="serial"
 SERIALCON="ttyS2"
-# edge (mainline 7.2) is left out on purpose: the board DTS lives in
-# patch/kernel/archive/k3-6.18/dt and there is no k3-7.2 patch dir yet, so an edge
-# image would build without a board DTB at all.
+PACKAGE_LIST_BOARD="bluez"
+# Mainline edge is left out on purpose: the board DTS is carried only by the
+# K3 6.18 patch set. Keep vendor-edge, which follows TI's 6.18.y branch.
 KERNEL_TARGET="vendor,vendor-rt,vendor-edge"
 KERNEL_TEST_TARGET="vendor"
 ATF_PLAT="k3"
 ATF_BOARD="lite"
 OPTEE_ARGS=""
 OPTEE_PLATFORM="k3-am62x"
-# J722S carries the same Rogue GPU as BeagleY-AI; TI ships the packages under the AM62P name.
+# J722S carries the same Rogue GPU as BeagleY-AI; TI publishes these packages
+# under the AM62P product name.
 TI_DEBPKGS_FALLBACK_SUITES=("noble" "jammy")
 TI_PACKAGES+=(
 	"ti-img-rogue-driver-am62p-dkms"
@@ -31,13 +32,47 @@ TI_PACKAGES+=(
 	"ti-img-rogue-firmware-am62p"
 )
 
-# The official TI U-Boot tree the k3 family selects has no T3 defconfigs yet
-# (checked against tag 12.00.00.07, branch ti-u-boot-2026.01 and u-boot master).
-# Until T3 support lands upstream, build U-Boot from the vendor fork pinned to a
-# verified commit. Runs after the family config so it wins over k3.conf.
+# The official TI U-Boot tree does not yet provide the T3 defconfigs. Pin the
+# board vendor fork to the revision verified on target hardware.
 function post_family_config__t3_gem_o1_uboot() {
 	declare -g BOOTSOURCE="https://github.com/t3gemstone/u-boot"
 	declare -g BOOTBRANCH="commit:b8410d78120ed91156f3ec7ede81bed004f8b46e"
 	declare -g BOOTPATCHDIR="u-boot-t3-gem-o1"
 	display_alert "T3 Gemstone O1: using vendor U-Boot fork" "${BOOTBRANCH}" "info"
+}
+
+function post_family_tweaks__t3_gem_o1_remoteproc_firmware() {
+	declare src="${SRC}/cache/sources/ti-linux-firmware/ti-ipc/j722s"
+	if [[ ! -d "${src}" ]]; then
+		display_alert "T3 Gemstone O1: ti-ipc/j722s yok, remoteproc firmware atlandı" "${src}" "wrn"
+		return 0
+	fi
+
+	display_alert "T3 Gemstone O1: installing remoteproc firmware" "ti-ipc/j722s" "info"
+	mkdir -p "${SDCARD}/lib/firmware/ti-ipc/j722s"
+	run_host_command_logged cp -v "${src}"/* "${SDCARD}/lib/firmware/ti-ipc/j722s/"
+
+	declare -A fw_map=(
+		[j722s-mcu-r5f0_0-fw]="ipc_echo_test_mcu2_0_release_strip.xer5f"
+		[j722s-main-r5f0_0-fw]="ipc_echo_test_mcu3_0_release_strip.xer5f"
+		[j722s-c71_0-fw]="ipc_echo_test_c7x_1_release_strip.xe71"
+		[j722s-c71_1-fw]="ipc_echo_test_c7x_2_release_strip.xe71"
+	)
+	declare name
+	for name in "${!fw_map[@]}"; do
+		declare target="ti-ipc/j722s/${fw_map[$name]}"
+		if [[ ! -f "${SDCARD}/lib/firmware/${target}" ]]; then
+			display_alert "T3 Gemstone O1: firmware eksik, bağ kurulmadı" "${target}" "wrn"
+			continue
+		fi
+		ln -sfn "${target}" "${SDCARD}/lib/firmware/${name}"
+	done
+}
+
+function post_family_tweaks__t3_gem_o1_blacklist_powervr() {
+	display_alert "T3 Gemstone O1: blacklisting mainline powervr" "TI pvrsrvkm drives the GPU" "info"
+	mkdir -p "${SDCARD}/etc/modprobe.d"
+	cat <<- 'EOF' > "${SDCARD}/etc/modprobe.d/blacklist-powervr.conf"
+		blacklist powervr
+	EOF
 }
