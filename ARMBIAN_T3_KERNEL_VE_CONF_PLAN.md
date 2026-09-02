@@ -453,7 +453,7 @@ fdtoverlay -i k3-am67a-t3-gem-o1.dtb -o /tmp/out.dtb \
 | Eski madde | Yeni durum |
 |---|---|
 | 1. Board assetleri | Geçerli, değişmedi (PR-A) |
-| 2. SD/eMMC boot aygıtı | Geçerli, değişmedi, `.conf` için zorunlu |
+| 2. SD/eMMC boot aygıtı | **Uygulandı**: `config/bootscripts/boot-k3-t3.cmd` `${mmcdev}` kullanıyor; donanım testi bekliyor |
 | 3. ICM-20948 DTS düğümü | **Kapandı**: vendor kernel `invensense,icm20948-spidev`'i `spidev.c` içinde destekliyor; DTS artık Armbian'da bakılmıyor |
 | 4. `vendor-rt` tutarlılığı | Değişti: T3 defconfig'i zaten RT; artık non-RT varyantı türetiliyor (Adım 2.3) |
 | 5.1 `__TIMESTAMP__` | **Kapandı**: dosya siliniyor (Adım 2.5) |
@@ -467,17 +467,58 @@ fdtoverlay -i k3-am67a-t3-gem-o1.dtb -o /tmp/out.dtb \
 
 ## 7. Kontrol listesi
 
-- [ ] 2.2 ATF / OP-TEE / ti-linux-firmware sürümleri donanımda doğrulandı
-- [ ] 2.1 `config/sources/families/k3-t3.conf` eklendi
-- [ ] 2.3 `linux-k3-t3-vendor.config` (+ opsiyonel `-rt`) üretildi ve normalize edildi
-- [ ] 2.4 `linux-k3-vendor.config` T3 eklemelerinden temizlendi, BeagleY-AI etkilenmedi
-- [ ] 2.5 T3 DTS ve Makefile patch'leri kaldırıldı
-- [ ] 2.6 Board dosyası `k3-t3` ailesine bağlandı, PCIe overlay mantığı düzeltildi
-- [ ] 2.7 `KERNEL_TARGET` kararı verildi
-- [ ] Bölüm 4 doğrulama zinciri temiz geçti
-- [ ] 3.3 SD ve eMMC dört senaryosu geçti
+Yazılım tarafı uygulandı ve doğrulandı. Kalan maddeler donanım ve upstream
+koordinasyonu gerektirir.
+
+### Tamamlanan
+
+- [x] 2.2 ATF / OP-TEE / ti-linux-firmware sürümleri meta-ti `5258ee2f` üzerinden
+  belirlendi: ATF `e0c4d39`, OP-TEE `a9690ae`, ti-linux-firmware `11.02.11`.
+  Yazılım tarafında `tiboot3.bin` ve `tispl.bin` üretildi; donanım doğrulaması
+  hâlâ gereklidir.
+- [x] 2.1 `config/sources/families/k3-t3.conf` eklendi
+- [x] 2.3 `linux-k3-t3-vendor.config` ve `linux-k3-t3-vendor-rt.config` üretildi;
+  her iki kernel derlemesinden sonra dosyalar değişmedi, yani normalize haldeler
+- [x] 2.4 `linux-k3-vendor.config` T3 eklemelerinden temizlendi
+- [x] 2.5 T3 DTS, pinmux, overlay ve Makefile patch'leri kaldırıldı
+- [x] 2.6 Board dosyası `k3-t3` ailesine bağlandı, PCIe overlay mantığı ters
+  çevrildi (taban Gen3, imaj Gen2 overlay'ini uygular)
+- [x] 2.7 `KERNEL_TARGET="vendor,vendor-rt"` korundu; her iki hedef de derleniyor
+- [x] Ek: SD/eMMC dinamik boot düzeltmesi `boot-k3-t3.cmd` ile uygulandı
+- [x] Bölüm 4 doğrulama zinciri temiz geçti (aşağıdaki kanıtlara bakınız)
+
+### Doğrulama kanıtları
+
+| Kontrol | Komut | Sonuç |
+|---|---|---|
+| Board config | `python3 tools/validate-board-config.py config/boards/t3-gem-o1.csc` | exit 0, yalnız `BOARD_MAINTAINER` uyarısı |
+| ShellCheck | `bash lib/tools/shellcheck.sh` | error ve critical yok |
+| DTS (vendor) | `./compile.sh dts-check BOARD=t3-gem-o1 BRANCH=vendor` | exit 0 |
+| DTS (vendor-rt) | `./compile.sh dts-check BOARD=t3-gem-o1 BRANCH=vendor-rt` | exit 0 |
+| Kernel (vendor) | `./compile.sh kernel BOARD=t3-gem-o1 BRANCH=vendor` | `linux-image-vendor-k3-t3` 6.12.24, 4 deb |
+| Kernel (vendor-rt) | `./compile.sh kernel BOARD=t3-gem-o1 BRANCH=vendor-rt` | deb-tar üretildi |
+| DTB paketi | `linux-dtb-vendor-k3-t3*.deb` içeriği | 36 T3 dosyası: taban DTB + 35 overlay |
+| Overlay | `fdtoverlay -i k3-am67a-t3-gem-o1.dtb ... -pcie-link-speed-2.dtbo` | `max-link-speed` 0x03 → 0x02 |
+| Minimal imaj | `./compile.sh build BOARD=t3-gem-o1 BRANCH=vendor RELEASE=trixie BUILD_MINIMAL=yes` | `Armbian-unofficial_26.08.0-trunk_T3-gem-o1_trixie_vendor_6.12.24_minimal.img` |
+| İmaj boot bölümü | `mdir` | `tiboot3.bin`, `tispl.bin`, `u-boot.img`, `Image`, `uInitrd`, `uEnv.txt`, `dtb/ti/` |
+| İmaj uEnv.txt | `mtype ::/uEnv.txt` | `bootpart=${mmcdev}:1`, `finduuid ... ${mmcdev}:2`, `name_overlays=...-pcie-link-speed-2.dtbo` |
+
+Yerel ortam notları (kodla ilgisi yok):
+
+- Armbian docker imajındaki git 2.43, GitHub HTTP/2 ile `expected flush after ref
+  listing` veriyor. `armbian/build` deposunda da aynı hata çıkıyor. Geçici çözüm:
+  konteynere `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.version
+  GIT_CONFIG_VALUE_0=HTTP/1.1` geçirmek. Bu değişiklik commit'lenmedi.
+- Türkçe locale `[a-zA-Z]` aralığını bozduğu için `compile.sh` cmdline parser'ı
+  `BUILD_MINIMAL` gibi parametreleri reddediyor. Çözüm: `LC_ALL=C ./compile.sh`.
+- İmaj derlemesi host'ta arm64 binfmt kaydı ister:
+  `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
+
+### Kalan (donanım ve upstream)
+
+- [ ] 3.3 SD ve eMMC dört senaryosu gerçek donanımda geçti
 - [ ] 3.4 Donanım kabul matrisi kanıtlarıyla dolduruldu
-- [ ] 3.5 trixie ve noble imajları açıldı
+- [ ] 3.5 noble imajı da açıldı
 - [ ] 3.1 `BOARD_MAINTAINER` atandı ve maintainers.json'da göründü
 - [ ] 3.2 Asset URL'leri 200 döndürdü
 - [ ] 3.6 `git mv` ile `.conf` yapıldı, kalan `.csc` referansı yok
