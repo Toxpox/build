@@ -2,7 +2,7 @@
 
 BOARD_NAME="T3 Gemstone O1"
 BOARD_VENDOR="t3gemstone"
-BOARDFAMILY="k3"
+BOARDFAMILY="k3-t3"
 BOARD_MAINTAINER=""
 INTRODUCED="2026"
 BOOT_SOC="j722s"
@@ -28,14 +28,6 @@ TI_PACKAGES+=(
 	"ti-img-rogue-tools-am62p"
 	"ti-img-rogue-firmware-am62p"
 )
-
-# The official TI U-Boot tree has no T3 defconfigs yet; pin the vendor fork.
-function post_family_config__t3_gem_o1_uboot() {
-	declare -g BOOTSOURCE="https://github.com/t3gemstone/u-boot"
-	declare -g BOOTBRANCH="commit:b8410d78120ed91156f3ec7ede81bed004f8b46e"
-	declare -g BOOTPATCHDIR="u-boot-t3-gem-o1"
-	display_alert "u-boot for ${BOARD}" "using vendor fork ${BOOTBRANCH}" "info"
-}
 
 function post_family_tweaks__t3_gem_o1_remoteproc_firmware() {
 	declare src="${SRC}/cache/sources/ti-linux-firmware/ti-ipc/j722s"
@@ -73,18 +65,17 @@ function post_family_tweaks__t3_gem_o1_blacklist_powervr() {
 	EOF
 }
 
-function pre_umount_final_image__zzz_t3_gem_o1_overlay_hint() {
-	# The base DTB runs PCIe0 at Gen2 because the onboard M.2 slot (DX-M1) does
-	# not enumerate at Gen3 on current hardware. Ship the Gen3 opt-in overlay
-	# next to the DTBs and document how to enable it, but leave it disabled so
-	# stock images keep the working Gen2 link. Users uncomment name_overlays and
-	# reboot to try Gen3 with a card that trains reliably. The TI U-Boot env
-	# applies every entry in name_overlays via get_overlay_mmc
+function pre_umount_final_image__zzz_t3_gem_o1_pcie_gen2() {
+	# The vendor DTS runs PCIe0 at Gen3, but the onboard M.2 slot (DX-M1) does
+	# not enumerate at Gen3 on current hardware; it does at Gen2. The vendor
+	# kernel ships a Gen2 overlay for exactly this, so apply it by default and
+	# leave the line editable for anyone with a card that trains at Gen3. The
+	# TI U-Boot env applies every entry in name_overlays via get_overlay_mmc
 	# (load ${bootdir}/dtb/${overlay}; fdt apply).
 	local uenv="${MOUNT}/boot/uEnv.txt"
 
 	if [[ ! -f "${uenv}" ]]; then
-		display_alert "$BOARD" "Missing ${uenv}; cannot document PCIe overlay" "wrn"
+		display_alert "$BOARD" "Missing ${uenv}; cannot set PCIe overlay" "wrn"
 		return 0
 	fi
 
@@ -94,10 +85,12 @@ function pre_umount_final_image__zzz_t3_gem_o1_overlay_hint() {
 
 	cat <<- 'EOF' >> "${uenv}"
 
-	# Optional device-tree overlays applied by U-Boot at boot. Space-separated,
-	# each path is relative to /boot/dtb/. Uncomment to raise the PCIe0 M.2 slot
-	# to Gen3 (8.0 GT/s) for a card that trains reliably (base default is Gen2):
-	#name_overlays=ti/k3-am67a-t3-gem-o1-pcie-link-speed-3.dtbo
+	# Device-tree overlays applied by U-Boot at boot. Space-separated, each path
+	# is relative to /boot/dtb/. The base DTB asks for PCIe Gen3 (8.0 GT/s); the
+	# overlay below caps the M.2 slot at Gen2 (5.0 GT/s), which is what the
+	# onboard DX-M1 enumerates at. Remove it to try Gen3 with a card that trains
+	# reliably. The vendor kernel builds many more overlays into /boot/dtb/ti/.
+	name_overlays=ti/k3-am67a-t3-gem-o1-pcie-link-speed-2.dtbo
 	EOF
 }
 
