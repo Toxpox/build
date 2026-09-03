@@ -57,6 +57,36 @@ function post_family_tweaks__t3_gem_o1_remoteproc_firmware() {
 	done
 }
 
+function post_family_tweaks__t3_gem_o1_bluetooth_firmware() {
+	# armbian-firmware ships a generic rtl8822cs_config.bin that asks for a
+	# 2 Mbaud link with hardware flow control. The module on this board is
+	# wired to UART6 without working RTS/CTS at that rate, so the very first
+	# firmware download command times out:
+	#
+	#   Bluetooth: hci0: RTL: cfg_sz 73, total sz 40777
+	#   Bluetooth: hci0: command 0xfc20 tx timeout
+	#   Bluetooth: hci0: RTL: download fw command failed (-110)
+	#
+	# ti-linux-firmware carries the board-specific pair, which selects
+	# 1.5 Mbaud with flow control off and is what the vendor image uses.
+	# Install it under /lib/firmware/updates, which the kernel searches
+	# before /lib/firmware, so the generic file is shadowed rather than
+	# overwritten and armbian-firmware upgrades stay non-destructive.
+	declare src="${SRC}/cache/sources/ti-linux-firmware/rtl_bt"
+	declare name
+	for name in rtl8822cs_fw.bin rtl8822cs_config.bin; do
+		if [[ ! -f "${src}/${name}" ]]; then
+			display_alert "$BOARD" "ti-linux-firmware ${name} missing, Bluetooth may not come up" "wrn"
+			return 0
+		fi
+	done
+
+	display_alert "$BOARD" "Installing board-specific RTL8822CS Bluetooth firmware" "info"
+	mkdir -p "${SDCARD}/lib/firmware/updates/rtl_bt"
+	run_host_command_logged cp -v "${src}/rtl8822cs_fw.bin" "${src}/rtl8822cs_config.bin" \
+		"${SDCARD}/lib/firmware/updates/rtl_bt/"
+}
+
 function post_family_tweaks__t3_gem_o1_blacklist_powervr() {
 	display_alert "$BOARD" "Blacklisting mainline powervr, TI pvrsrvkm drives the GPU" "info"
 	mkdir -p "${SDCARD}/etc/modprobe.d"
